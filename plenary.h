@@ -18,6 +18,7 @@ extern "C" {
 
 #define TEMP_CAPACITY (1*1024*1024)
 #define DA_INIT_CAPACITY 32
+#define REGION_DEFAULT_CAPACITY (8*1024)
 
 // ======================================================
 // Macros
@@ -46,10 +47,10 @@ extern "C" {
 #endif
 
 #if !defined(ASSERT)
-#   error "`common.h` require the definition of `ASSERT()` macro"
+#   error "`plenary.h` require the definition of `ASSERT()` macro"
 #endif
 #if !defined(MALLOC) || !defined(FREE) || !defined(REALLOC)
-#   error "`common.h` requires you to define `ALLOC()`, `FREE()`, `REALLOC()` macros"
+#   error "`plenary.h` requires you to define `ALLOC()`, `FREE()`, `REALLOC()` macros"
 #endif
 
 // string view macros
@@ -97,6 +98,7 @@ typedef struct {
     size_t count;
 } String_View;
 
+typedef struct Arena Arena;
 
 // ======================================================
 // Functions
@@ -131,6 +133,11 @@ String_View sv_chop_left_while(String_View* strv, bool (*predicate)(char x));
 String_View sv_chop_by_delim(String_View* strv, char delim);
 String_View sv_chop_by_sv(String_View* strv, String_View sv);
 int sv_to_int(String_View strv);
+
+void *arena_alloc(Arena *arena, size_t nbytes);
+void *arena_realloc(Arena *arena, void *oldptr, size_t oldsz, size_t newsz);
+void arena_reset(Arena *arena);
+void arena_free(Arena *arena);
 
 #ifdef __cplusplus
 }
@@ -419,6 +426,84 @@ int sv_to_int(String_View strv)
     }
     if(is_negative) result *= -1;
     return result;
+}
+
+
+typedef struct Region Region;
+struct Region {
+    Region* next;
+    size_t usage, capacity;
+    void* data;
+};
+
+struct Arena {
+    Region *first;
+    Region *last;
+};
+
+Region* region_init(size_t capacity)
+{
+    size_t size = sizeof(Region) + capacity;
+    Region* r = (Region*)MALLOC(size);
+    ASSERT(r != NULL);
+    r->next = NULL;
+    r->usage = 0;
+    r->capacity = capacity;
+    r->data = (void*)(&r->data + sizeof(r->data));
+    return r;
+}
+
+void region_deinit(Region* r)
+{
+    FREE(r);
+}
+
+void* arena_alloc(Arena* a, size_t size)
+{
+    if(a->last == NULL) {
+        ASSERT(a->first == NULL);
+        size_t capacity = REGION_DEFAULT_CAPACITY;
+        if(capacity < size) capacity = size;
+        a->last = region_init(capacity);
+        a->first = a->last;
+    }
+
+    while(a->last->usage + size > a->last->capacity && a->last->next != NULL)
+    {
+        a->last = a->last->next;
+    }
+
+    if(a->last->usage + size > a->last->capacity) {
+        ASSERT(a->last->next == NULL);
+        size_t capacity = REGION_DEFAULT_CAPACITY;
+        if(capacity < size) capacity = size;
+        a->last = region_init(capacity);
+        a->first = a->last;
+    }
+
+    void* result = (void*)((size_t)a->last->data + a->last->usage);
+    a->last->usage += size;
+    return result;
+}
+
+void arena_reset(Arena* a)
+{
+    for(Region* r = a->first; r != NULL; r = r->next) {
+        r->usage = 0;
+    }
+    a->last = a->first;
+}
+
+void arena_free(Arena* a)
+{
+    Region* r = a->first;
+    while(r) {
+        Region* current = r;
+        r = r->next;
+        region_deinit(current);
+    }
+    a->first = NULL;
+    a->last = NULL;
 }
 
 #endif // PLENARY_IMPLEMENTATION

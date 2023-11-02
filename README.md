@@ -36,6 +36,8 @@ int sv_to_int(String_View strv);
 #define da_free(da) // free an instance of da(T)
 #define da_append(da, item) // append an item to an instance of da(T)
 #define da_append_many(da, new_items, new_items_count) // append many items to an instance of da(T)
+
+// da_free(), da_apend(), da_append_many() take pointer
 ```
 
 ### Temporary Allocator
