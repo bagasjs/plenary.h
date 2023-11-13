@@ -58,6 +58,8 @@ extern "C" {
 #define SV_ARGV(sv) (int)sv.count, sv.data
 #define SV_DEBUG_FMT "(%zu) \"%.*s\""
 #define SV_DEBUG_ARGV(sv) sv.count, (int)sv.count, sv.data
+#define SV_STATIC(cstr_lit) { .count = sizeof(cstr_lit) - 1, .data = (cstr_lit) }
+#define SV(cstr_lit) sv_from_parts(cstr_lit, sizeof(cstr_lit) - 1)
 #define INVALID_SV (String_View){0}
 
 // dynamic array macros
@@ -98,7 +100,19 @@ typedef struct {
     size_t count;
 } String_View;
 
+typedef struct Region Region;
+struct Region {
+    Region* next;
+    size_t usage, capacity;
+    void* data;
+};
+
 typedef struct Arena Arena;
+struct Arena {
+    Region *first;
+    Region *last;
+};
+
 
 // ======================================================
 // Functions
@@ -116,7 +130,6 @@ size_t temp_usage(void);
 char *temp_sprintf(const char *fmt, ...);
 
 String_View sv_from_parts(const char* data, size_t n);
-String_View sv_from_cstr(const char* cstr);
 String_View sv_slice(String_View strv, size_t start, size_t end);
 int sv_find_cstr(String_View strv, const char* sth, size_t index);
 int sv_find(String_View strv, String_View sth, size_t index);
@@ -215,13 +228,6 @@ String_View sv_from_parts(const char* data, size_t n)
     return (String_View) {
         .data = data,
         .count = n,
-    };
-}
-String_View sv_from_cstr(const char* data)
-{
-    return (String_View) {
-        .data = data,
-        .count = strlen(data),
     };
 }
 
@@ -428,18 +434,6 @@ int sv_to_int(String_View strv)
     return result;
 }
 
-
-typedef struct Region Region;
-struct Region {
-    Region* next;
-    size_t usage, capacity;
-    void* data;
-};
-
-struct Arena {
-    Region *first;
-    Region *last;
-};
 
 Region* region_init(size_t capacity)
 {
